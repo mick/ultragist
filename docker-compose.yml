@@ -1,0 +1,15 @@
+---
+version: "2.1"
+services:
+  gitssh-server:
+    image: gist-test:latest
+    container_name: gistssh
+    hostname: gistssh-server #optional
+    environment:
+      - DBPATH=/data/ultragist.db
+    volumes:
+      - /opt/appdata/gitssh/data:/data
+    ports:
+      - "22:2222"
+    command: /usr/sbin/sshd -D -e
+    restart: unless-stopped

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+echo "Hi $UGUSER! You've successfully authenticated, but ultragist does not provide shell access."
+exit 128
