@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/psanford/sqlite3vfs"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 )
 
@@ -62,12 +64,13 @@ func (vfs *GcsVFS) Open(name string, flags sqlite3vfs.OpenFlag) (sqlite3vfs.File
 		panic(err)
 	}
 	tf := &gcsFile{
-		bucket:       u.Host,
-		key:          u.Path[1:],
-		name:         name,
-		cacheHandler: vfs.CacheHandler,
-		roundTripper: vfs.RoundTripper,
-		chunkSize:    4096 * 1, //this need to fit the page boundaries, default 4096 max 65536,
+		bucket:        u.Host,
+		key:           u.Path[1:],
+		name:          name,
+		cacheHandler:  vfs.CacheHandler,
+		roundTripper:  vfs.RoundTripper,
+		chunkSize:     4096 * 1, //this need to fit the page boundaries, default 4096 max 65536,
+		pendingWrites: sync.Map{},
 	}
 
 	return tf, flags, nil
@@ -92,12 +95,13 @@ func (vfs *GcsVFS) FullPathname(name string) string {
 }
 
 type gcsFile struct {
-	bucket       string
-	key          string
-	name         string
-	cacheHandler CacheHandler
-	roundTripper http.RoundTripper
-	chunkSize    int64
+	bucket        string
+	key           string
+	name          string
+	cacheHandler  CacheHandler
+	roundTripper  http.RoundTripper
+	chunkSize     int64
+	pendingWrites sync.Map
 }
 
 func (tf *gcsFile) Close() error {
@@ -147,8 +151,8 @@ func (tf *gcsFile) ReadAt(p []byte, off int64) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
 	defer cancel()
 
-	partKey := parts(tf.chunkSize, off, tf.key)
-
+	partNumber := getPartNumber(tf.chunkSize, off)
+	partKey := getPartKey(tf.key, partNumber)
 	//todo what about end of the file? will that just work out? probably...
 	fmt.Printf("read key %v %v\n", tf.bucket, partKey)
 	fmt.Printf("ReadAt chrunk start %v offset %v len %v\n", chunkStart, offStart, len(p))
@@ -177,9 +181,12 @@ func (tf *gcsFile) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-func parts(chunkSize int64, offset int64, key string) string {
+func getPartNumber(chunkSize int64, offset int64) int64 {
 	chunkStart := chunkSize * int64(math.Floor(float64(offset)/float64(chunkSize)))
 	partNumber := chunkStart / chunkSize
+	return partNumber
+}
+func getPartKey(key string, partNumber int64) string {
 	return fmt.Sprintf("%s/part-%09d", key, partNumber)
 }
 
@@ -187,32 +194,12 @@ func (tf *gcsFile) WriteAt(b []byte, off int64) (n int, err error) {
 	fmt.Println("WriteAt off, len", off, len(b))
 
 	// offStart := off % tf.chunkSize
-	partKey := parts(tf.chunkSize, off, tf.key)
-	// partKey := fmt.Sprintf("%s/part-%09d", tf.key, partNumber)
-	fmt.Printf("write key %v %v\n", tf.bucket, partKey)
-	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("storage.NewClient: %v", err)
-	}
-	defer client.Close()
+	partNumber := getPartNumber(tf.chunkSize, off)
+	partData := make([]byte, len(b))
+	copy(partData, b)
+	tf.pendingWrites.Store(partNumber, partData)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
-	defer cancel()
-
-	wc := client.Bucket(tf.bucket).Object(partKey).NewWriter(ctx)
-
-	_, err = wc.Write(b)
-	if err != nil {
-		fmt.Printf("Object(%q).NewWriter: %v", partKey, err)
-		return 0, sqlite3vfs.IOErrorWrite
-	}
-	err = wc.Close()
-	if err != nil {
-		fmt.Printf("Object(%q).NewWriter: %v", partKey, err)
-		return 0, sqlite3vfs.IOErrorWrite
-	}
-
+	fmt.Println("bytes written", len(partData))
 	return 0, nil
 }
 
@@ -223,6 +210,42 @@ func (tf *gcsFile) Truncate(size int64) error {
 
 func (tf *gcsFile) Sync(flag sqlite3vfs.SyncType) error {
 	fmt.Println("Sync", flag)
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("storage.NewClient: %v", err)
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
+	defer cancel()
+	// var wg sync.WaitGroup
+	// wg.Add(len(tf.pendingWrites))
+
+	var eg errgroup.Group
+	tf.pendingWrites.Range(func(partNumber, data interface{}) bool {
+		pn := partNumber.(int64)
+		d := data.([]byte)
+		partKey := getPartKey(tf.key, pn)
+		fmt.Printf("write key %v %v\n", tf.bucket, partKey)
+		eg.Go(func() error {
+			// defer wg.Done()
+			fmt.Printf("Writing partnumber %d data %v to %v\n", pn, d[:10], partKey)
+			wc := client.Bucket(tf.bucket).Object(partKey).NewWriter(ctx)
+			if _, err := wc.Write(d); err != nil {
+				return err
+			}
+			if err := wc.Close(); err != nil {
+				return err
+			}
+			tf.pendingWrites.Delete(pn)
+			return nil
+		})
+		return true
+	})
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	fmt.Println("Sync done")
 	return nil
 }
 

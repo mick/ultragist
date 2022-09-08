@@ -10,7 +10,7 @@ func GetKeyByFingerprint(fingerprint string) (Key, error) {
 	var key Key = Key{
 		Fingerprint: fingerprint,
 	}
-	db := getDB(true)
+	db := getDB("", true)
 	stmt, err := db.Prepare("SELECT publickey, userid FROM sshkeys WHERE fingerprint = ?")
 	if err != nil {
 		return key, err
@@ -43,7 +43,7 @@ func WriteKey(pubKeyBytes []byte, userId string) error {
 	// Get the fingerprint
 	f := ssh.FingerprintSHA256(pk)
 
-	db := getDB(false)
+	db := getDB("", false)
 	// maybe this should just fail?
 	stmt, err := db.Prepare(`INSERT INTO sshkeys(fingerprint, publickey, userid) VALUES(?,?,?)`)
 	if err != nil {

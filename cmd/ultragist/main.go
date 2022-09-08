@@ -68,39 +68,61 @@ func main() {
 				},
 			},
 			{
-				Name:  "init-db",
-				Usage: "initialize the database",
-				Action: func(cCtx *cli.Context) error {
-					ultragist.InitDB()
-					return nil
-				},
-			},
-			{
-				Name:  "db-test",
-				Usage: "try reads and writes to db",
-				Action: func(cCtx *cli.Context) error {
-					// ultragist.InitDB()
-					return ultragist.DBTest()
-				},
-			},
-			{
-				Name:  "db-export",
-				Usage: "export and concat db to local file",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "gcspath",
-						Usage:    "path to db in gcs",
-						Required: true,
+				Name:  "db",
+				Usage: "interact with the database",
+				Subcommands: []*cli.Command{
+					{
+						Name:  "init",
+						Usage: "initialize the database",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:     "dbpath",
+								Usage:    "path to db locally (file:/path) or on gcs (gs://bucket/path/to/db)",
+								Required: true,
+							},
+						},
+						Action: func(cCtx *cli.Context) error {
+							dbpath := cCtx.String("dbpath")
+							ultragist.InitDB(dbpath)
+							return nil
+						},
 					},
-					&cli.StringFlag{
-						Name:  "dest",
-						Usage: "where to write the db",
+					{
+						Name:  "test",
+						Usage: "try reads and writes to db",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:     "dbpath",
+								Usage:    "path to db locally (file:/path) or on gcs (gs://bucket/path/to/db)",
+								Required: true,
+							},
+						},
+						Action: func(cCtx *cli.Context) error {
+							dbpath := cCtx.String("dbpath")
+							// ultragist.InitDB(gcspath)
+							return ultragist.DBTest(dbpath)
+						},
 					},
-				},
-				Action: func(cCtx *cli.Context) error {
-					gcspath := cCtx.String("gcspath")
-					dest := cCtx.String("dest")
-					return ultragist.DBExport(gcspath, dest)
+					{
+						Name:  "export",
+						Usage: "export and concat db to local file",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:     "dbpath",
+								Usage:    "path to db on gcs (gs://bucket/path/to/db)",
+								Required: true,
+							},
+							&cli.StringFlag{
+								Name:  "dest",
+								Usage: "where to write the db",
+							},
+						},
+						Action: func(cCtx *cli.Context) error {
+							dbpath := cCtx.String("dbpath")
+							dest := cCtx.String("dest")
+							return ultragist.DBExport(dbpath, dest)
+						},
+					},
 				},
 			},
 		},

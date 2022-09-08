@@ -19,7 +19,7 @@ import (
 
 var sharedDBConnection *sql.DB
 
-func getDB(readonly bool) *sql.DB {
+func getDB(dbpath string, readonly bool) *sql.DB {
 	if sharedDBConnection != nil {
 		return sharedDBConnection
 	}
@@ -42,14 +42,20 @@ func getDB(readonly bool) *sql.DB {
 	// 	return dbCache[tileset]
 	// }
 
-	bucket := "simplemap-scratch"
-	prefix := "sqlite"
-	dbname := "test"
+	// bucket := "simplemap-scratch"
+	// prefix := "sqlite"
+	// dbname := "test"
+	var params string
+	if len(dbpath) > 2 && dbpath[:2] == "gs" {
+		params = "vfs=gcsvfs&mode=rwc&_journal=OFF&_sync=3"
+	} else {
+		params = "mode=rwc"
+	}
 
 	// todo check if this file exists, so we short circuit / avoid query errors
-	dbpath := fmt.Sprintf("gs://%s/%s/%s.db?vfs=gcsvfs&mode=rwc&_journal=OFF", bucket, prefix, dbname)
+	connstr := fmt.Sprintf("%s?%s", dbpath, params)
 	var err error
-	sharedDBConnection, err = sql.Open("sqlite3", dbpath)
+	sharedDBConnection, err = sql.Open("sqlite3", connstr)
 	if err != nil {
 		log.Fatalf("open db err: %s", err)
 	}
@@ -60,8 +66,8 @@ func getDB(readonly bool) *sql.DB {
 
 }
 
-func InitDB() error {
-	db := getDB(false)
+func InitDB(dbpath string) error {
+	db := getDB(dbpath, false)
 
 	sqlStmt := `
 	create table if not exists sshkeys (fingerprint text not null primary key, publickey text, userid text);
@@ -88,13 +94,13 @@ func InitSqliteVFS() error {
 	return nil
 }
 
-func DBTest() error {
+func DBTest(dbpath string) error {
 	fmt.Println("DBTest")
 
-	db := getDB(false)
+	db := getDB(dbpath, false)
 
 	sqlStmt := ""
-	for i := 2000; i < 3000; i++ {
+	for i := 3000; i < 4000; i++ {
 
 		sqlStmt += fmt.Sprintf(`INSERT INTO users (userid, username, email) VALUES ('%d', 'mick', 'email@mail.com');`, i)
 	}
@@ -125,7 +131,7 @@ func DBTest() error {
 
 	var userid, username, email string
 
-	err = stmt.QueryRow("1235").Scan(&userid, &username, &email)
+	err = stmt.QueryRow("3050").Scan(&userid, &username, &email)
 	if err != nil {
 		return err
 	}
