@@ -2,7 +2,7 @@
 version: "2.1"
 services:
   gitssh-server:
-    image: gist-test:latest
+    build: .
     container_name: gistssh
     hostname: gistssh-server #optional
     environment:

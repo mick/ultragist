@@ -12,9 +12,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var globalOptions = []string{
+var defaultOptions = []string{
 	"restrict",
-	// "pty",
 }
 
 // MarshalAuthorizedKey serializes key for inclusion in an OpenSSH
@@ -38,7 +37,7 @@ func AuthorizedKeys(fingerprint string) error {
 		return err
 	}
 	var options []string
-	copy(globalOptions, options)
+	copy(defaultOptions, options)
 
 	options = append(options, fmt.Sprintf("environment=\"UGUSER=%s\"", key.UserId))
 
