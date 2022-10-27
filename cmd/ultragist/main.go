@@ -87,50 +87,9 @@ func main() {
 							return nil
 						},
 					},
-					{
-						Name:  "test",
-						Usage: "try reads and writes to db",
-						Flags: []cli.Flag{
-							&cli.StringFlag{
-								Name:     "dbpath",
-								Usage:    "path to db locally (file:/path) or on gcs (gs://bucket/path/to/db)",
-								Required: true,
-							},
-						},
-						Action: func(cCtx *cli.Context) error {
-							dbpath := cCtx.String("dbpath")
-							// ultragist.InitDB(gcspath)
-							return ultragist.DBTest(dbpath)
-						},
-					},
-					{
-						Name:  "export",
-						Usage: "export and concat db to local file",
-						Flags: []cli.Flag{
-							&cli.StringFlag{
-								Name:     "dbpath",
-								Usage:    "path to db on gcs (gs://bucket/path/to/db)",
-								Required: true,
-							},
-							&cli.StringFlag{
-								Name:  "dest",
-								Usage: "where to write the db",
-							},
-						},
-						Action: func(cCtx *cli.Context) error {
-							dbpath := cCtx.String("dbpath")
-							dest := cCtx.String("dest")
-							return ultragist.DBExport(dbpath, dest)
-						},
-					},
 				},
 			},
 		},
-	}
-
-	err := ultragist.InitSqliteVFS()
-	if err != nil {
-		log.Fatalf("init sqlite vfs err: %s", err)
 	}
 
 	if err := app.Run(os.Args); err != nil {
